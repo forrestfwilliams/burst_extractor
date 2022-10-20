@@ -1,9 +1,10 @@
-import boto3
 import io
 import struct
 import zipfile
 import zlib
 from IPython import embed
+
+import boto3
 
 s3 = boto3.client('s3')
 
@@ -12,6 +13,7 @@ ZIP64_EOCD_RECORD_SIZE = 56
 ZIP64_EOCD_LOCATOR_SIZE = 20
 
 MAX_STANDARD_ZIP_SIZE = 4_294_967_295
+
 
 def get_zip_file(bucket, key):
     file_size = get_file_size(bucket, key)
@@ -23,46 +25,59 @@ def get_zip_file(bucket, key):
         return zipfile.ZipFile(io.BytesIO(central_directory + eocd_record)), cd_start
     else:
         print('accessing zip64')
-        zip64_eocd_record = fetch(bucket, key,
-                                  file_size - (EOCD_RECORD_SIZE + ZIP64_EOCD_LOCATOR_SIZE + ZIP64_EOCD_RECORD_SIZE),
-                                  ZIP64_EOCD_RECORD_SIZE)
-        zip64_eocd_locator = fetch(bucket, key,
-                                   file_size - (EOCD_RECORD_SIZE + ZIP64_EOCD_LOCATOR_SIZE),
-                                   ZIP64_EOCD_LOCATOR_SIZE)
+        zip64_eocd_record = fetch(
+            bucket,
+            key,
+            file_size - (EOCD_RECORD_SIZE + ZIP64_EOCD_LOCATOR_SIZE + ZIP64_EOCD_RECORD_SIZE),
+            ZIP64_EOCD_RECORD_SIZE,
+        )
+        zip64_eocd_locator = fetch(
+            bucket, key, file_size - (EOCD_RECORD_SIZE + ZIP64_EOCD_LOCATOR_SIZE), ZIP64_EOCD_LOCATOR_SIZE
+        )
         cd_start, cd_size = get_central_directory_metadata_from_eocd64(zip64_eocd_record)
         central_directory = fetch(bucket, key, cd_start, cd_size)
-        return zipfile.ZipFile(io.BytesIO(central_directory + zip64_eocd_record + zip64_eocd_locator + eocd_record)), cd_start
+        return (
+            zipfile.ZipFile(io.BytesIO(central_directory + zip64_eocd_record + zip64_eocd_locator + eocd_record)),
+            cd_start,
+        )
 
 
 def get_file_size(bucket, key):
     head_response = s3.head_object(Bucket=bucket, Key=key)
     return head_response['ContentLength']
 
+
 def fetch(bucket, key, start, length):
     end = start + length - 1
     response = s3.get_object(Bucket=bucket, Key=key, Range="bytes=%d-%d" % (start, end))
     return response['Body'].read()
+
 
 def get_central_directory_metadata_from_eocd(eocd):
     cd_size = parse_little_endian_to_int(eocd[12:16])
     cd_start = parse_little_endian_to_int(eocd[16:20])
     return cd_start, cd_size
 
+
 def get_central_directory_metadata_from_eocd64(eocd64):
     cd_size = parse_little_endian_to_int(eocd64[40:48])
     cd_start = parse_little_endian_to_int(eocd64[48:56])
     return cd_start, cd_size
 
+
 def parse_little_endian_to_int(little_endian_bytes):
     format_character = "i" if len(little_endian_bytes) == 4 else "q"
     return struct.unpack("<" + format_character, little_endian_bytes)[0]
+
 
 def print_zip_content(zip_file):
     files = [zi.filename for zi in zip_file.filelist]
     print(f"Files: {files}")
 
-def parse_short(bytes):
-    return ord(bytes[0:1]) + (ord(bytes[1:2]) << 8)
+
+def parse_short(in_bytes):
+    return ord(in_bytes[0:1]) + (ord(in_bytes[1:2]) << 8)
+
 
 def extract_file(bucket, key, cd_start, filename):
     zi = [zi for zi in zip_file.filelist if zi.filename == filename][0]
@@ -77,9 +92,10 @@ def extract_file(bucket, key, cd_start, filename):
 
     return content
 
+
 if __name__ == '__main__':
-    import cProfile
-    import pstats
+    # import cProfile
+    # import pstats
 
     bucket = 'ffwilliams2-shenanigans'
     data = 'bursts/S1A_IW_SLC__1SDV_20200604T022251_20200604T022318_032861_03CE65_7C85.zip'
