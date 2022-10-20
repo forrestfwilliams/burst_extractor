@@ -84,13 +84,13 @@ if __name__ == '__main__':
     bucket = 'ffwilliams2-shenanigans'
     data = 'bursts/S1A_IW_SLC__1SDV_20200604T022251_20200604T022318_032861_03CE65_7C85.zip'
     filename = 'S1A_IW_SLC__1SDV_20200604T022251_20200604T022318_032861_03CE65_7C85.SAFE/measurement/s1a-iw1-slc-vh-20200604t022252-20200604t022317-032861-03ce65-001.tiff'
-    with cProfile.Profile() as pr:
-        zip_file, cd_start = get_zip_file(bucket, data)
-        with open('test.tif', 'wb') as f:
-            data = extract_file(bucket, data, cd_start, filename)
-            f.write(data)
+    # with cProfile.Profile() as pr:
+    zip_file, cd_start = get_zip_file(bucket, data)
+    swath = extract_file(bucket, data, cd_start, filename)
+    with open('test.tif', 'wb') as f:
+        f.write(data)
 
-stats = pstats.Stats(pr)
-stats.sort_stats(pstats.SortKey.TIME)
-stats.print_stats()
-stats.dump_stats(filename='profile.prof')
+    # stats = pstats.Stats(pr)
+    # stats.sort_stats(pstats.SortKey.TIME)
+    # stats.print_stats()
+    # stats.dump_stats(filename='profile.prof')
