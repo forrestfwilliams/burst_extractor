@@ -7,8 +7,6 @@ import zlib
 import boto3
 from osgeo import gdal
 
-s3 = boto3.client('s3')
-
 EOCD_RECORD_SIZE = 22
 ZIP64_EOCD_RECORD_SIZE = 56
 ZIP64_EOCD_LOCATOR_SIZE = 20
@@ -101,63 +99,57 @@ def extract_xml(bucket, key, cd_start, filename):
 
 
 class BurstMetadata:
-    def __init__(self, annotation: ET.Element, burst_number):
+    def __init__(self, swath_path: str, annotation: ET.Element, burst_number):
+        self.swath_path = swath_path
         self.annotation = annotation
         self.burst_number = burst_number
 
         self.burst = self.annotation.findall('.//{*}burst')[self.burst_number]
-        self.lines = int(self.annotation.findtext('.//{*}linesPerBurst'))
-        self.samples = int(self.annotation.findtext('.//{*}samplesPerBurst'))
+        n_lines = int(self.annotation.findtext('.//{*}linesPerBurst'))
+        n_samples = int(self.annotation.findtext('.//{*}samplesPerBurst'))
 
-        firstValidSample = [int(val) for val in self.annotation.find('.//{*}firstValidSample').text.split()]
-        lastValidSample = [int(val) for val in self.annotation.find('.//{*}lastValidSample').text.split()]
-        first = False
-        last = False
-        for ii, val in enumerate(firstValidSample):
-            if (val >= 0) and (not first):
-                first = True
-                self.firstValidLine = ii
+        first_valid_samples = [int(val) for val in self.burst.find('firstValidSample').text.split()]
+        last_valid_samples = [int(val) for val in self.burst.find('lastValidSample').text.split()]
 
-            if (val < 0) and (first) and (not last):
-                last = True
-                self.numValidLines = ii - self.firstValidLine
+        first_valid_line = [x >= 0 for x in first_valid_samples].index(True)
+        n_valid_lines = [x >= 0 for x in first_valid_samples].count(True)
+        last_line = first_valid_line + n_valid_lines - 1
 
-        self.lastValidLine = self.firstValidLine + self.numValidLines - 1
+        first_valid_sample = max(first_valid_samples[first_valid_line], first_valid_samples[last_line])
+        last_sample = min(last_valid_samples[first_valid_line], last_valid_samples[last_line])
 
-        self.firstValidSample = max(firstValidSample[self.firstValidLine], firstValidSample[self.lastValidLine])
-        self.lastValidSample = min(lastValidSample[self.firstValidLine], lastValidSample[self.lastValidLine])
+        self.first_valid_line = first_valid_line
+        self.last_valid_line = last_line
+        self.first_valid_sample = first_valid_sample
+        self.last_valid_sample = last_sample
+        self.shape = (n_lines, n_samples)
 
-        self.numValidSamples = self.lastValidSample - self.firstValidSample
+    def slc_to_vrt_file(self, out_path):
+        '''Write burst to VRT file.
+        Parameters:
+        -----------
+        out_path : string
+            Path of output VRT file.
+        need: burst_number, self.shape, last_valid_sample, first_valid_sample, last_valid_line, first_valid_line
+        '''
+        line_offset = self.burst_number * self.shape[0]
 
+        inwidth = self.last_valid_sample - self.first_valid_sample
+        inlength = self.last_valid_line - self.first_valid_line + 1
+        outlength, outwidth = self.shape
+        yoffset = line_offset + self.first_valid_line
+        localyoffset = self.first_valid_line
+        xoffset = self.first_valid_sample
+        gdal_obj = gdal.Open(self.swath_path, gdal.GA_ReadOnly)
+        fullwidth = gdal_obj.RasterXSize
+        fulllength = gdal_obj.RasterYSize
 
-def createBurstVRT(swath_path, out_path, burst):
-    '''
-    Create a VRT file representing a single burst.
-    '''
-    src = gdal.Open(swath_path, gdal.GA_ReadOnly)
-    fullWidth = src.RasterXSize
-    fullLength = src.RasterYSize
-    del src
-    yoffset = (burst.burst_number) * burst.lines
-
-    rdict = {
-        'inwidth': burst.lastValidSample - burst.firstValidSample,
-        'inlength': burst.lastValidLine - burst.firstValidLine,
-        'outwidth': burst.samples,
-        'outlength': burst.lines,
-        'filename': swath_path,
-        'yoffset': yoffset + burst.firstValidLine,
-        'localyoffset': burst.firstValidLine,
-        'xoffset': burst.firstValidSample,
-        'fullwidth': fullWidth,
-        'fulllength': fullLength,
-    }
-
-    tmpl = '''<VRTDataset rasterXSize="{outwidth}" rasterYSize="{outlength}">
-    <VRTRasterBand dataType="CFloat32" band="1">
+        # TODO maybe cleaner to write with ElementTree
+        tmpl = f'''<VRTDataset rasterXSize="{outwidth}" rasterYSize="{outlength}">
+    <VRTRasterBand dataType="CInt16" band="1">
         <NoDataValue>0.0</NoDataValue>
         <SimpleSource>
-            <SourceFilename relativeToVRT="1">{filename}</SourceFilename>
+            <SourceFilename relativeToVRT="1">{self.swath_path}</SourceFilename>
             <SourceBand>1</SourceBand>
             <SourceProperties RasterXSize="{fullwidth}" RasterYSize="{fulllength}" DataType="CInt16"/>
             <SrcRect xOff="{xoffset}" yOff="{yoffset}" xSize="{inwidth}" ySize="{inlength}"/>
@@ -166,13 +158,14 @@ def createBurstVRT(swath_path, out_path, burst):
     </VRTRasterBand>
 </VRTDataset>'''
 
-    with open(out_path, 'w') as f:
-        f.write(tmpl.format(**rdict))
+        with open(out_path, 'w') as fid:
+            fid.write(tmpl)
 
 
 if __name__ == '__main__':
     import cProfile
     import pstats
+    s3 = boto3.client('s3')
 
     bucket = 'ffwilliams2-shenanigans'
     data = 'bursts/S1A_IW_SLC__1SDV_20200604T022251_20200604T022318_032861_03CE65_7C85.zip'
@@ -182,16 +175,13 @@ if __name__ == '__main__':
     with cProfile.Profile() as pr:
         zip_file, cd_start = get_zip_file(bucket, data)
         annotation = extract_xml(bucket, data, cd_start, annotation_path)
-        burst = BurstMetadata(annotation, burst_number)
 
         swath_bytes = extract_file(bucket, data, cd_start, swath_path)
-        # with open('swath.tif', 'rb') as f:
-        #     swath_bytes = f.read()
-
         with open('swath.tif', 'wb') as f:
             f.write(swath_bytes)
 
-        createBurstVRT('swath.tif', f'burst_0{burst_number+1}.vrt', burst)
+        burst = BurstMetadata('swath.tif', annotation, burst_number)
+        burst.slc_to_vrt_file(f'burst_0{burst_number+1}.vrt')
         src = gdal.Open(f'burst_0{burst_number+1}.vrt')
         src = gdal.Translate(f'burst_0{burst_number+1}.tif', src, format='GTiff')
         del src
