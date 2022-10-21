@@ -1,8 +1,10 @@
 import io
 import struct
+import tempfile
 import xml.etree.ElementTree as ET
 import zipfile
 import zlib
+from pathlib import Path
 
 import boto3
 from osgeo import gdal
@@ -161,31 +163,51 @@ class BurstMetadata:
         with open(out_path, 'w') as fid:
             fid.write(tmpl)
 
+    def slc_to_file(self, out_path: str, fmt: str = 'GTiff'):
+        '''Write burst to GTiff file.
+
+        Parameters:
+        -----------
+        out_path : string
+            Path of output GTiff file.
+        '''
+        # get output directory of out_path
+        dst_dir = str(Path(out_path).parent)
+
+        # create VRT; make temporary if output not VRT
+        if fmt != 'VRT':
+            temp_vrt = tempfile.NamedTemporaryFile(dir=dst_dir)
+            vrt_fname = temp_vrt.name
+        else:
+            vrt_fname = out_path
+        self.slc_to_vrt_file(vrt_fname)
+
+        if fmt == 'VRT':
+            return
+
+        # open temporary VRT and translate to GTiff
+        src_ds = gdal.Open(vrt_fname)
+        gdal.Translate(out_path, src_ds, format=fmt)
+
+        # clean up
+        del src_ds
+
 
 if __name__ == '__main__':
-    import cProfile
-    import pstats
     s3 = boto3.client('s3')
 
     bucket = 'ffwilliams2-shenanigans'
     data = 'bursts/S1A_IW_SLC__1SDV_20200604T022251_20200604T022318_032861_03CE65_7C85.zip'
     swath_path = 'S1A_IW_SLC__1SDV_20200604T022251_20200604T022318_032861_03CE65_7C85.SAFE/measurement/s1a-iw2-slc-vv-20200604t022253-20200604t022318-032861-03ce65-005.tiff'
     annotation_path = 'S1A_IW_SLC__1SDV_20200604T022251_20200604T022318_032861_03CE65_7C85.SAFE/annotation/s1a-iw2-slc-vv-20200604t022253-20200604t022318-032861-03ce65-005.xml'
-    burst_number = 7
-    with cProfile.Profile() as pr:
-        zip_file, cd_start = get_zip_file(bucket, data)
-        annotation = extract_xml(bucket, data, cd_start, annotation_path)
+    # burst_number = 7
+    zip_file, cd_start = get_zip_file(bucket, data)
+    annotation = extract_xml(bucket, data, cd_start, annotation_path)
 
-        swath_bytes = extract_file(bucket, data, cd_start, swath_path)
-        with open('swath.tif', 'wb') as f:
-            f.write(swath_bytes)
+    swath_bytes = extract_file(bucket, data, cd_start, swath_path)
+    with open('swath.tif', 'wb') as f:
+        f.write(swath_bytes)
 
+    for burst_number in range(9):
         burst = BurstMetadata('swath.tif', annotation, burst_number)
-        burst.slc_to_vrt_file(f'burst_0{burst_number+1}.vrt')
-        src = gdal.Open(f'burst_0{burst_number+1}.vrt')
-        src = gdal.Translate(f'burst_0{burst_number+1}.tif', src, format='GTiff')
-        del src
-
-    stats = pstats.Stats(pr)
-    stats.sort_stats(pstats.SortKey.TIME)
-    stats.dump_stats(filename='profile.prof')
+        burst.slc_to_file(f'burst_0{burst_number+1}.tif')
