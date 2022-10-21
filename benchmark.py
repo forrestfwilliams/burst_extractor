@@ -2,12 +2,13 @@ import asyncio
 import math
 import time
 
+import boto3
 from aiobotocore.session import get_session
 from botocore.config import Config
-import boto3
 
 KB = 1024
 MB = KB * KB
+
 
 def get_chunks(start, length, chunk_size):
     n_chunks = math.floor(length / chunk_size)
@@ -38,29 +39,29 @@ if __name__ == '__main__':
     bucket = 'ffwilliams2-shenanigans'
     key = 'bursts/swath.tif'
 
-    # # Direct GET (completes in 39s)
-    # start = time.time()
-    # s3 = boto3.client('s3')
-    # response = s3.get_object(Bucket=bucket, Key=key)
-    # with open('get.tif', 'wb') as f:
-    #     f.write(response['Body'].read())
-    # end = time.time()
-    # print(f'Get downloaded in {end-start:.2f} seconds')
+    # Direct GET (completes in 39s)
+    start = time.time()
+    s3 = boto3.client('s3')
+    response = s3.get_object(Bucket=bucket, Key=key)
+    with open('get.tif', 'wb') as f:
+        f.write(response['Body'].read())
+    end = time.time()
+    print(f'Get downloaded in {end-start:.2f} seconds')
 
-    # # Multipart (completes 3.7s)
-    # start = time.time()
-    # s3 = boto3.resource('s3')
-    # obj = s3.Object(bucket, key)
-    # with open('multipart.tif', 'wb') as data:
-    #     obj.download_fileobj(data)
-    # end = time.time()
-    # print(f'Multipart downloaded in {end-start:.2f} seconds')
+    # Multipart (completes 3.7s)
+    start = time.time()
+    s3 = boto3.resource('s3')
+    obj = s3.Object(bucket, key)
+    with open('multipart.tif', 'wb') as data:
+        obj.download_fileobj(data)
+    end = time.time()
+    print(f'Multipart downloaded in {end-start:.2f} seconds')
 
     # Async GET (Completes in 16s)
     start = time.time()
     s3 = boto3.client('s3')
     content_length = s3.get_object(Bucket=bucket, Key=key)['ContentLength']
-    content = asyncio.run(download_range_async(bucket, key, 0, content_length, chunk_size=25*MB))
+    content = asyncio.run(download_range_async(bucket, key, 0, content_length, chunk_size=25 * MB))
     with open('async.tif', 'wb') as f:
         f.write(content)
     end = time.time()
