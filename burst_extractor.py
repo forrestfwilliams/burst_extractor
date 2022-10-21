@@ -171,29 +171,31 @@ def createBurstVRT(swath_path, out_path, burst):
 
 
 if __name__ == '__main__':
-    # import cProfile
-    # import pstats
+    import cProfile
+    import pstats
 
     bucket = 'ffwilliams2-shenanigans'
     data = 'bursts/S1A_IW_SLC__1SDV_20200604T022251_20200604T022318_032861_03CE65_7C85.zip'
     swath_path = 'S1A_IW_SLC__1SDV_20200604T022251_20200604T022318_032861_03CE65_7C85.SAFE/measurement/s1a-iw2-slc-vv-20200604t022253-20200604t022318-032861-03ce65-005.tiff'
     annotation_path = 'S1A_IW_SLC__1SDV_20200604T022251_20200604T022318_032861_03CE65_7C85.SAFE/annotation/s1a-iw2-slc-vv-20200604t022253-20200604t022318-032861-03ce65-005.xml'
     burst_number = 7
-    # with cProfile.Profile() as pr:
-    zip_file, cd_start = get_zip_file(bucket, data)
-    annotation = extract_xml(bucket, data, cd_start, annotation_path)
-    burst = BurstMetadata(annotation, burst_number)
+    with cProfile.Profile() as pr:
+        zip_file, cd_start = get_zip_file(bucket, data)
+        annotation = extract_xml(bucket, data, cd_start, annotation_path)
+        burst = BurstMetadata(annotation, burst_number)
 
-    swath_bytes = extract_file(bucket, data, cd_start, swath_path)
-    with open('swath.tif', 'wb') as f:
-        f.write(swath_bytes)
+        # swath_bytes = extract_file(bucket, data, cd_start, swath_path)
+        with open('swath.tif', 'rb') as f:
+            swath_bytes = f.read()
 
-    createBurstVRT('swath.tif', f'burst_0{burst_number+1}.vrt', burst)
-    src = gdal.Open(f'burst_0{burst_number+1}.vrt')
-    src = gdal.Translate(f'burst_0{burst_number+1}.tif', src, format='GTiff')
-    del src
+        with open('swath.tif', 'wb') as f:
+            f.write(swath_bytes)
 
-    # stats = pstats.Stats(pr)
-    # stats.sort_stats(pstats.SortKey.TIME)
-    # stats.print_stats()
-    # stats.dump_stats(filename='profile.prof')
+        createBurstVRT('swath.tif', f'burst_0{burst_number+1}.vrt', burst)
+        src = gdal.Open(f'burst_0{burst_number+1}.vrt')
+        src = gdal.Translate(f'burst_0{burst_number+1}.tif', src, format='GTiff')
+        del src
+
+    stats = pstats.Stats(pr)
+    stats.sort_stats(pstats.SortKey.TIME)
+    stats.dump_stats(filename='profile.prof')
