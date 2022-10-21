@@ -184,9 +184,9 @@ if __name__ == '__main__':
         annotation = extract_xml(bucket, data, cd_start, annotation_path)
         burst = BurstMetadata(annotation, burst_number)
 
-        # swath_bytes = extract_file(bucket, data, cd_start, swath_path)
-        with open('swath.tif', 'rb') as f:
-            swath_bytes = f.read()
+        swath_bytes = extract_file(bucket, data, cd_start, swath_path)
+        # with open('swath.tif', 'rb') as f:
+        #     swath_bytes = f.read()
 
         with open('swath.tif', 'wb') as f:
             f.write(swath_bytes)
