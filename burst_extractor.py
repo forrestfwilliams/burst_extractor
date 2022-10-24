@@ -245,7 +245,6 @@ if __name__ == '__main__':
     data = 'bursts/S1A_IW_SLC__1SDV_20200604T022251_20200604T022318_032861_03CE65_7C85.zip'
     swath_path = 'S1A_IW_SLC__1SDV_20200604T022251_20200604T022318_032861_03CE65_7C85.SAFE/measurement/s1a-iw2-slc-vv-20200604t022253-20200604t022318-032861-03ce65-005.tiff'
     annotation_path = 'S1A_IW_SLC__1SDV_20200604T022251_20200604T022318_032861_03CE65_7C85.SAFE/annotation/s1a-iw2-slc-vv-20200604t022253-20200604t022318-032861-03ce65-005.xml'
-    # burst_number = 7
     zip_file, cd_start = get_zip_file(s3, bucket, data)
     annotation = extract_xml(s3, bucket, data, cd_start, annotation_path)
 
@@ -253,6 +252,10 @@ if __name__ == '__main__':
     with open('swath.tif', 'wb') as f:
         f.write(swath_bytes)
 
-    for burst_number in range(9):
-        burst = BurstMetadata('swath.tif', annotation, burst_number)
-        burst.slc_to_file(f'burst_0{burst_number+1}.tif')
+    burst_number = 7
+    burst = BurstMetadata('swath.tif', annotation, burst_number)
+    burst.slc_to_file(f'burst_0{burst_number+1}.tif')
+
+    # for burst_number in range(9):
+    #     burst = BurstMetadata('swath.tif', annotation, burst_number)
+    #     burst.slc_to_file(f'burst_0{burst_number+1}.tif')
