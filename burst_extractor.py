@@ -51,7 +51,7 @@ class S3Zip:
         self.key = key
         self.zip_dir, self.cd_start = self.get_zip_dir()
 
-    def parse_little_endian_to_int(little_endian_bytes):
+    def parse_little_endian_to_int(self, little_endian_bytes):
         format_character = "i" if len(little_endian_bytes) == 4 else "q"
         return struct.unpack("<" + format_character, little_endian_bytes)[0]
 
