@@ -4,7 +4,7 @@ import struct
 import tempfile
 import xml.etree.ElementTree as ET
 import zipfile
-import zlib
+from isal import isal_zlib
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -14,13 +14,12 @@ from osgeo import gdal
 EOCD_RECORD_SIZE = 22
 ZIP64_EOCD_RECORD_SIZE = 56
 ZIP64_EOCD_LOCATOR_SIZE = 20
-
 MAX_STANDARD_ZIP_SIZE = 4_294_967_295
-
 KB = 1024
 MB = KB * KB
 MULTIPART_THRESHOLD = 8 * MB
 MULTIPART_CHUNKSIZE = 8 * MB
+ZLIB_MAX_WBITS = 15
 
 
 def get_zip_file(s3_client, bucket, key):
@@ -134,7 +133,7 @@ def extract_file(s3_client, bucket, key, cd_start, filename):
     content_offset = cd_start + zi.header_offset + 30 + name_len + extra_len
     content = fetch(s3_client, bucket, key, content_offset, zi.compress_size)
     if zi.compress_type == zipfile.ZIP_DEFLATED:
-        content = zlib.decompressobj(-zlib.MAX_WBITS).decompress(content)
+        content = isal_zlib.decompressobj(-15).decompress(content)
 
     return content
 
