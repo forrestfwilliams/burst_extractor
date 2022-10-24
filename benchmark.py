@@ -48,11 +48,10 @@ def thread_pool_get(s3_client, bucket, key, start, length, chunk_size):
     my_tasks = [[s3_client, bucket, key, f'bytes={i}-{j}'] for i, j in zip(starts, stops)]
 
     # Dispatch work tasks with our s3_client
-    with ThreadPoolExecutor(max_workers=8) as executor:
+    with ThreadPoolExecutor(max_workers=20) as executor:
         results = executor.map(get_s3, my_tasks)
 
     content = b''.join(results)
-    breakpoint()
     return content
 
 
@@ -63,39 +62,39 @@ if __name__ == '__main__':
     key = 'bursts/swath.tif'
     # key = 'bursts/file.txt'
 
-    # # Direct GET (completes in 39s)
-    # start = time.time()
-    # s3 = boto3.client('s3')
-    # response = s3.get_object(Bucket=bucket, Key=key)
-    # with open('get.tif', 'wb') as f:
-    #     f.write(response['Body'].read())
-    # end = time.time()
-    # print(f'Get downloaded in {end-start:.2f} seconds')
+    # Direct GET (completes in 15s)
+    start = time.time()
+    s3 = boto3.client('s3')
+    response = s3.get_object(Bucket=bucket, Key=key)
+    with open('get.tif', 'wb') as f:
+        f.write(response['Body'].read())
+    end = time.time()
+    print(f'Get downloaded in {end-start:.2f} seconds')
 
-    # # Multipart (completes 3.7s)
-    # start = time.time()
-    # s3 = boto3.resource('s3')
-    # obj = s3.Object(bucket, key)
-    # with open('multipart.tif', 'wb') as data:
-    #     obj.download_fileobj(data)
-    # end = time.time()
-    # print(f'Multipart downloaded in {end-start:.2f} seconds')
+    # Multipart (completes 3.7s)
+    start = time.time()
+    s3 = boto3.resource('s3')
+    obj = s3.Object(bucket, key)
+    with open('multipart.tif', 'wb') as data:
+        obj.download_fileobj(data)
+    end = time.time()
+    print(f'Multipart downloaded in {end-start:.2f} seconds')
 
-    # # Async GET (Completes in 16s)
-    # start = time.time()
-    # s3 = boto3.client('s3')
-    # content_length = s3.get_object(Bucket=bucket, Key=key)['ContentLength']
-    # content = asyncio.run(download_range_async(bucket, key, 0, content_length, chunk_size=25 * MB))
-    # with open('async.tif', 'wb') as f:
-    #     f.write(content)
-    # end = time.time()
-    # print(f'Async downloaded in {end-start:.2f} seconds')
-
-    # ThreadPoolExecutorGet
+    # Async GET (Completes in 6.8s)
     start = time.time()
     s3 = boto3.client('s3')
     content_length = s3.get_object(Bucket=bucket, Key=key)['ContentLength']
-    content = thread_pool_get(s3, bucket, key, 0, content_length, chunk_size=10 * MB)
+    content = asyncio.run(download_range_async(bucket, key, 0, content_length, chunk_size=25 * MB))
+    with open('async.tif', 'wb') as f:
+        f.write(content)
+    end = time.time()
+    print(f'Async downloaded in {end-start:.2f} seconds')
+
+    # ThreadPoolExecutor Get (Completes in 4.7s)
+    start = time.time()
+    s3 = boto3.client('s3')
+    content_length = s3.get_object(Bucket=bucket, Key=key)['ContentLength']
+    content = thread_pool_get(s3, bucket, key, 0, content_length, chunk_size=25 * MB)
     with open('threadpool.tif', 'wb') as f:
         f.write(content)
     end = time.time()
