@@ -1,9 +1,11 @@
 import io
+import math
 import struct
 import tempfile
 import xml.etree.ElementTree as ET
 import zipfile
 import zlib
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import boto3
@@ -14,6 +16,11 @@ ZIP64_EOCD_RECORD_SIZE = 56
 ZIP64_EOCD_LOCATOR_SIZE = 20
 
 MAX_STANDARD_ZIP_SIZE = 4_294_967_295
+
+KB = 1024
+MB = KB * KB
+MULTIPART_THRESHOLD = 8 * MB
+MULTIPART_CHUNKSIZE = 8 * MB
 
 
 def get_zip_file(s3_client, bucket, key):
@@ -49,10 +56,47 @@ def get_file_size(s3_client, bucket, key):
     return head_response['ContentLength']
 
 
+def calculate_range_parameters(total_size, offset, chunk_size):
+    num_parts = int(math.ceil(total_size / float(chunk_size)))
+    range_params = []
+    for part_index in range(num_parts):
+        start_range = (part_index * chunk_size) + offset
+        if part_index == num_parts - 1:
+            end_range = str(total_size + offset - 1)
+        else:
+            end_range = start_range + chunk_size - 1
+        range_params.append(f'bytes={start_range}-{end_range}')
+    return range_params
+
+
+def threaded_s3_get(args):
+    s3_client, bucket, key, range_header = args
+    resp = s3_client.get_object(Bucket=bucket, Key=key, Range=range_header)
+    body = resp['Body'].read()
+    return body
+
+
+def threaded_s3_get_workflow(s3_client, bucket, key, offset, file_size, chunk_size):
+    # Define some work to be done, this can be anything
+
+    my_tasks = [[s3_client, bucket, key, i] for i in calculate_range_parameters(file_size, offset, chunk_size)]
+
+    # Dispatch work tasks with our s3_client
+    with ThreadPoolExecutor(max_workers=20) as executor:
+        results = executor.map(threaded_s3_get, my_tasks)
+
+    content = b''.join(results)
+    return content
+
+
 def fetch(s3_client, bucket, key, start, length):
-    end = start + length - 1
-    response = s3_client.get_object(Bucket=bucket, Key=key, Range="bytes=%d-%d" % (start, end))
-    return response['Body'].read()
+    if length <= MULTIPART_THRESHOLD:
+        end = start + length - 1
+        response = s3_client.get_object(Bucket=bucket, Key=key, Range="bytes=%d-%d" % (start, end))
+        content = response['Body'].read()
+    else:
+        content = threaded_s3_get_workflow(s3_client, bucket, key, start, length, MULTIPART_CHUNKSIZE)
+    return content
 
 
 def get_central_directory_metadata_from_eocd(eocd):
