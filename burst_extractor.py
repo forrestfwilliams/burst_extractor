@@ -16,41 +16,42 @@ ZIP64_EOCD_LOCATOR_SIZE = 20
 MAX_STANDARD_ZIP_SIZE = 4_294_967_295
 
 
-def get_zip_file(bucket, key):
-    file_size = get_file_size(bucket, key)
-    eocd_record = fetch(bucket, key, file_size - EOCD_RECORD_SIZE, EOCD_RECORD_SIZE)
+def get_zip_file(s3_client, bucket, key):
+    file_size = get_file_size(s3_client, bucket, key)
+    eocd_record = fetch(s3_client, bucket, key, file_size - EOCD_RECORD_SIZE, EOCD_RECORD_SIZE)
     if file_size <= MAX_STANDARD_ZIP_SIZE:
         print('accessing zip')
         cd_start, cd_size = get_central_directory_metadata_from_eocd(eocd_record)
-        central_directory = fetch(bucket, key, cd_start, cd_size)
+        central_directory = fetch(s3_client, bucket, key, cd_start, cd_size)
         return zipfile.ZipFile(io.BytesIO(central_directory + eocd_record)), cd_start
     else:
         print('accessing zip64')
         zip64_eocd_record = fetch(
+            s3_client,
             bucket,
             key,
             file_size - (EOCD_RECORD_SIZE + ZIP64_EOCD_LOCATOR_SIZE + ZIP64_EOCD_RECORD_SIZE),
             ZIP64_EOCD_RECORD_SIZE,
         )
         zip64_eocd_locator = fetch(
-            bucket, key, file_size - (EOCD_RECORD_SIZE + ZIP64_EOCD_LOCATOR_SIZE), ZIP64_EOCD_LOCATOR_SIZE
+            s3_client, bucket, key, file_size - (EOCD_RECORD_SIZE + ZIP64_EOCD_LOCATOR_SIZE), ZIP64_EOCD_LOCATOR_SIZE
         )
         cd_start, cd_size = get_central_directory_metadata_from_eocd64(zip64_eocd_record)
-        central_directory = fetch(bucket, key, cd_start, cd_size)
+        central_directory = fetch(s3_client, bucket, key, cd_start, cd_size)
         return (
             zipfile.ZipFile(io.BytesIO(central_directory + zip64_eocd_record + zip64_eocd_locator + eocd_record)),
             cd_start,
         )
 
 
-def get_file_size(bucket, key):
-    head_response = s3.head_object(Bucket=bucket, Key=key)
+def get_file_size(s3_client, bucket, key):
+    head_response = s3_client.head_object(Bucket=bucket, Key=key)
     return head_response['ContentLength']
 
 
-def fetch(bucket, key, start, length):
+def fetch(s3_client, bucket, key, start, length):
     end = start + length - 1
-    response = s3.get_object(Bucket=bucket, Key=key, Range="bytes=%d-%d" % (start, end))
+    response = s3_client.get_object(Bucket=bucket, Key=key, Range="bytes=%d-%d" % (start, end))
     return response['Body'].read()
 
 
@@ -80,22 +81,22 @@ def parse_short(in_bytes):
     return ord(in_bytes[0:1]) + (ord(in_bytes[1:2]) << 8)
 
 
-def extract_file(bucket, key, cd_start, filename):
+def extract_file(s3_client, bucket, key, cd_start, filename):
     zi = [zi for zi in zip_file.filelist if zi.filename == filename][0]
-    file_head = fetch(bucket, key, cd_start + zi.header_offset + 26, 4)
+    file_head = fetch(s3_client, bucket, key, cd_start + zi.header_offset + 26, 4)
     name_len = parse_short(file_head[0:2])
     extra_len = parse_short(file_head[2:4])
 
     content_offset = cd_start + zi.header_offset + 30 + name_len + extra_len
-    content = fetch(bucket, key, content_offset, zi.compress_size)
+    content = fetch(s3_client, bucket, key, content_offset, zi.compress_size)
     if zi.compress_type == zipfile.ZIP_DEFLATED:
         content = zlib.decompressobj(-zlib.MAX_WBITS).decompress(content)
 
     return content
 
 
-def extract_xml(bucket, key, cd_start, filename):
-    content = extract_file(bucket, key, cd_start, filename)
+def extract_xml(s3_client, bucket, key, cd_start, filename):
+    content = extract_file(s3_client, bucket, key, cd_start, filename)
     xml = ET.parse(io.BytesIO(content)).getroot()
     return xml
 
@@ -201,10 +202,10 @@ if __name__ == '__main__':
     swath_path = 'S1A_IW_SLC__1SDV_20200604T022251_20200604T022318_032861_03CE65_7C85.SAFE/measurement/s1a-iw2-slc-vv-20200604t022253-20200604t022318-032861-03ce65-005.tiff'
     annotation_path = 'S1A_IW_SLC__1SDV_20200604T022251_20200604T022318_032861_03CE65_7C85.SAFE/annotation/s1a-iw2-slc-vv-20200604t022253-20200604t022318-032861-03ce65-005.xml'
     # burst_number = 7
-    zip_file, cd_start = get_zip_file(bucket, data)
-    annotation = extract_xml(bucket, data, cd_start, annotation_path)
+    zip_file, cd_start = get_zip_file(s3, bucket, data)
+    annotation = extract_xml(s3, bucket, data, cd_start, annotation_path)
 
-    swath_bytes = extract_file(bucket, data, cd_start, swath_path)
+    swath_bytes = extract_file(s3, bucket, data, cd_start, swath_path)
     with open('swath.tif', 'wb') as f:
         f.write(swath_bytes)
 
