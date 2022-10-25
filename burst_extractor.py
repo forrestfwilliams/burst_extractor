@@ -6,6 +6,7 @@ import xml.etree.ElementTree as ET
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from uuid import uuid4
 
 import boto3
 from isal import isal_zlib
@@ -121,7 +122,7 @@ class S3Zip:
                 cd_start,
             )
 
-    def extract_file(self, filename):
+    def extract_file(self, filename, outname=None):
         zi = [zi for zi in self.zip_dir.filelist if zi.filename == filename][0]
         file_head = self.get(self.cd_start + zi.header_offset + 26, 4)
         name_len = parse_short(file_head[0:2])
@@ -132,13 +133,18 @@ class S3Zip:
         if zi.compress_type == zipfile.ZIP_DEFLATED:
             content = isal_zlib.decompressobj(-15).decompress(content)
 
+        if outname:
+            with open(outname, 'wb') as f:
+                f.write(content)
+            return outname
+
         return content
 
 
 class BurstMetadata:
-    def __init__(self, swath_path: str, annotation: ET.Element, burst_number):
-        self.swath_path = swath_path
-        self.annotation = annotation
+    def __init__(self, swath_name: str, annotation_name: str, burst_number: int):
+        self.swath_path = swath_name
+        self.annotation = ET.parse(annotation_name).getroot()
         self.burst_number = burst_number
 
         self.burst = self.annotation.findall('.//{*}burst')[self.burst_number]
@@ -237,13 +243,19 @@ if __name__ == '__main__':
     annotation_path = 'S1A_IW_SLC__1SDV_20200604T022251_20200604T022318_032861_03CE65_7C85.SAFE/annotation/s1a-iw2-slc-vv-20200604t022253-20200604t022318-032861-03ce65-005.xml'
 
     safe_zip = S3Zip(s3, bucket, key)
-    annotation = bytes_to_xml(safe_zip.extract_file(annotation_path))
-    swath_bytes = safe_zip.extract_file(swath_path)
-    with open('swath.tif', 'wb') as f:
-        f.write(swath_bytes)
+
+    swath_out = 'swath.tif'
+    swath_bytes = safe_zip.extract_file(swath_path, outname=swath_out)
+
+    annotation_out = 'annotation.xml'
+    annotation_bytes = safe_zip.extract_file(annotation_path, outname=annotation_out)
+
+    # annotation = bytes_to_xml(safe_zip.extract_file(annotation_path))
+    # swath_name = f'/vsimem/{uuid4().hex}'
+    # gdal.FileFromMemBuffer(swath_name, swath_bytes)
 
     burst_number = 7
-    burst = BurstMetadata('swath.tif', annotation, burst_number)
+    burst = BurstMetadata(swath_out, annotation_out, burst_number)
     burst.slc_to_file(f'burst_0{burst_number+1}.tif')
 
     # for burst_number in range(9):
