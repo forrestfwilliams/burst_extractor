@@ -8,6 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import boto3
+import requests
 from isal import isal_zlib
 from osgeo import gdal
 
@@ -16,10 +17,6 @@ from osgeo import gdal
 
 KB = 1024
 MB = KB * KB
-
-
-def parse_short(in_bytes):
-    return ord(in_bytes[0:1]) + (ord(in_bytes[1:2]) << 8)
 
 
 def bytes_to_xml(in_bytes):
@@ -41,20 +38,24 @@ def calculate_range_parameters(total_size, offset, chunk_size):
 
 
 class S3Zip:
-    def __init__(self, s3_client, bucket, key, multipart_threshold=8 * MB, multipart_chunksize=8 * MB):
+    def __init__(self, client, bucket, key, multipart_threshold=8 * MB, multipart_chunksize=8 * MB):
         self.EOCD_RECORD_SIZE = 22
         self.ZIP64_EOCD_RECORD_SIZE = 56
         self.ZIP64_EOCD_LOCATOR_SIZE = 20
         self.MAX_STANDARD_ZIP_SIZE = 4_294_967_295
         self.ZLIB_MAX_WBITS = 15
 
-        self.client = s3_client
+        self.client = client
         self.bucket = bucket
         self.key = key
         self.multipart_threshold = multipart_threshold
         self.multipart_chunksize = multipart_chunksize
+        self.url = f'https://{self.bucket}.s3.us-west-2.amazonaws.com/{self.key}'
 
         self.zip_dir, self.cd_start = self.get_zip_dir()
+
+    def parse_short(self, in_bytes):
+        return ord(in_bytes[0:1]) + (ord(in_bytes[1:2]) << 8)
 
     def parse_little_endian_to_int(self, little_endian_bytes):
         format_character = "i" if len(little_endian_bytes) == 4 else "q"
@@ -75,20 +76,27 @@ class S3Zip:
         print(f"Files: {files}")
 
     def get_file_size(self):
-        head_response = self.client.head_object(Bucket=self.bucket, Key=self.key)
-        return head_response['ContentLength']
+        # file_size = self.client.head_object(Bucket=self.bucket, Key=self.key)['ContentLength']
+        file_size = int(self.client.head(self.url).headers['content-length'])
+        return file_size
 
     def ranged_s3_get(self, range_header):
         resp = self.client.get_object(Bucket=self.bucket, Key=self.key, Range=range_header)
         body = resp['Body'].read()
         return body
 
-    def threaded_s3_get(self, offset, file_size, chunk_size):
+    def ranged_http_get(self, range_header):
+        resp = self.client.get(self.url, headers={'Range': range_header})
+        body = resp.content
+        return body
+
+    def threaded_get(self, offset, file_size):
         range_params = calculate_range_parameters(file_size, offset, self.multipart_chunksize)
 
         # Dispatch work tasks with our s3_client
         with ThreadPoolExecutor(max_workers=20) as executor:
-            results = executor.map(self.ranged_s3_get, range_params)
+            # results = executor.map(self.ranged_s3_get, range_params)
+            results = executor.map(self.ranged_http_get, range_params)
 
         content = b''.join(results)
         return content
@@ -96,9 +104,10 @@ class S3Zip:
     def get(self, start, length):
         if length <= self.multipart_threshold:
             end = start + length - 1
-            content = self.ranged_s3_get(f'bytes={start}-{end}')
+            # content = self.ranged_s3_get(f'bytes={start}-{end}')
+            content = self.ranged_http_get(f'bytes={start}-{end}')
         else:
-            content = self.threaded_s3_get(start, length)
+            content = self.threaded_get(start, length)
         return content
 
     def get_zip_dir(self):
@@ -129,8 +138,8 @@ class S3Zip:
     def extract_file(self, filename, outname=None):
         zi = [zi for zi in self.zip_dir.filelist if zi.filename == filename][0]
         file_head = self.get(self.cd_start + zi.header_offset + 26, 4)
-        name_len = parse_short(file_head[0:2])
-        extra_len = parse_short(file_head[2:4])
+        name_len = self.parse_short(file_head[0:2])
+        extra_len = self.parse_short(file_head[2:4])
 
         content_offset = self.cd_start + zi.header_offset + 30 + name_len + extra_len
         content = self.get(content_offset, zi.compress_size)
@@ -239,20 +248,23 @@ class BurstMetadata:
 
 
 if __name__ == '__main__':
-    s3 = boto3.client('s3')
 
     bucket = 'ffwilliams2-shenanigans'
     key = 'bursts/S1A_IW_SLC__1SDV_20200604T022251_20200604T022318_032861_03CE65_7C85.zip'
     swath_path = 'S1A_IW_SLC__1SDV_20200604T022251_20200604T022318_032861_03CE65_7C85.SAFE/measurement/s1a-iw2-slc-vv-20200604t022253-20200604t022318-032861-03ce65-005.tiff'
     annotation_path = 'S1A_IW_SLC__1SDV_20200604T022251_20200604T022318_032861_03CE65_7C85.SAFE/annotation/s1a-iw2-slc-vv-20200604t022253-20200604t022318-032861-03ce65-005.xml'
 
-    safe_zip = S3Zip(s3, bucket, key)
-
-    swath_out = 'swath.tif'
-    swath_bytes = safe_zip.extract_file(swath_path, outname=swath_out)
+    # s3 = boto3.client('s3')
+    # safe_zip = S3Zip(s3, bucket, key)
+    http = requests.session()
+    safe_zip = S3Zip(http, bucket, key)
 
     annotation_out = 'annotation.xml'
     annotation_bytes = safe_zip.extract_file(annotation_path, outname=annotation_out)
+    breakpoint()
+
+    swath_out = 'swath.tif'
+    swath_bytes = safe_zip.extract_file(swath_path, outname=swath_out)
 
     # annotation = bytes_to_xml(safe_zip.extract_file(annotation_path))
     # swath_name = f'/vsimem/{uuid4().hex}'
