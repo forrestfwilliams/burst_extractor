@@ -143,7 +143,14 @@ class S3Zip:
 
 class BurstMetadata:
     def __init__(self, swath_name: str, annotation_name: str, burst_number: int):
-        self.swath_path = swath_name
+        '''A class containing the metadata and routines need to create an ISCE-compatible burst geotiff.
+        Parameters:
+        -----------
+        swath_name : path of input swath tif from SAFE file (unzipped)
+        annotation_name : path of input annotation xml from SAFE file (unzipped)
+        burst_number: burst number to be extracted (0-indexed by order in annotation file)
+        '''
+        self.swath_name = swath_name
         self.annotation = ET.parse(annotation_name).getroot()
         self.burst_number = burst_number
 
@@ -167,13 +174,11 @@ class BurstMetadata:
         self.last_valid_sample = last_sample
         self.shape = (n_lines, n_samples)
 
-    def slc_to_vrt_file(self, out_path):
-        '''Write burst to VRT file.
+    def slc_to_vrt_file(self, out_path: str):
+        '''Writes an ISCE-compatible burst to VRT a file.
         Parameters:
         -----------
-        out_path : string
-            Path of output VRT file.
-        need: burst_number, self.shape, last_valid_sample, first_valid_sample, last_valid_line, first_valid_line
+        out_path : path of output VRT file.
         '''
         line_offset = self.burst_number * self.shape[0]
 
@@ -183,7 +188,7 @@ class BurstMetadata:
         yoffset = line_offset + self.first_valid_line
         localyoffset = self.first_valid_line
         xoffset = self.first_valid_sample
-        gdal_obj = gdal.Open(self.swath_path, gdal.GA_ReadOnly)
+        gdal_obj = gdal.Open(self.swath_name, gdal.GA_ReadOnly)
         fullwidth = gdal_obj.RasterXSize
         fulllength = gdal_obj.RasterYSize
 
@@ -192,7 +197,7 @@ class BurstMetadata:
     <VRTRasterBand dataType="CInt16" band="1">
         <NoDataValue>0.0</NoDataValue>
         <SimpleSource>
-            <SourceFilename relativeToVRT="1">{self.swath_path}</SourceFilename>
+            <SourceFilename relativeToVRT="1">{self.swath_name}</SourceFilename>
             <SourceBand>1</SourceBand>
             <SourceProperties RasterXSize="{fullwidth}" RasterYSize="{fulllength}" DataType="CInt16"/>
             <SrcRect xOff="{xoffset}" yOff="{yoffset}" xSize="{inwidth}" ySize="{inlength}"/>
@@ -201,18 +206,16 @@ class BurstMetadata:
     </VRTRasterBand>
 </VRTDataset>'''
 
-        with open(out_path, 'w') as fid:
-            fid.write(tmpl)
+        with open(out_path, 'w') as f:
+            f.write(tmpl)
 
     def slc_to_file(self, out_path: str, fmt: str = 'GTiff'):
-        '''Write burst to GTiff file.
-
+        '''Write a burst raster to file by creating temporary VRT, then translating to desired format.
         Parameters:
         -----------
-        out_path : string
-            Path of output GTiff file.
+        out_path : path of output burst file.
+        fmt: output format specified using gdal driver name (see https://gdal.org/drivers/raster/index.html)
         '''
-        # get output directory of out_path
         dst_dir = str(Path(out_path).parent)
 
         # create VRT; make temporary if output not VRT
@@ -226,11 +229,8 @@ class BurstMetadata:
         if fmt == 'VRT':
             return
 
-        # open temporary VRT and translate to GTiff
         src_ds = gdal.Open(vrt_fname)
         gdal.Translate(out_path, src_ds, format=fmt)
-
-        # clean up
         del src_ds
 
 
