@@ -6,21 +6,16 @@ import xml.etree.ElementTree as ET
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from uuid import uuid4
 
 import boto3
 from isal import isal_zlib
 from osgeo import gdal
 
+# from uuid import uuid4
+
+
 KB = 1024
 MB = KB * KB
-MULTIPART_THRESHOLD = 8 * MB
-MULTIPART_CHUNKSIZE = 8 * MB
-EOCD_RECORD_SIZE = 22
-ZIP64_EOCD_RECORD_SIZE = 56
-ZIP64_EOCD_LOCATOR_SIZE = 20
-MAX_STANDARD_ZIP_SIZE = 4_294_967_295
-ZLIB_MAX_WBITS = 15
 
 
 def parse_short(in_bytes):
@@ -46,10 +41,19 @@ def calculate_range_parameters(total_size, offset, chunk_size):
 
 
 class S3Zip:
-    def __init__(self, s3_client, bucket, key):
+    def __init__(self, s3_client, bucket, key, multipart_threshold=8 * MB, multipart_chunksize=8 * MB):
+        self.EOCD_RECORD_SIZE = 22
+        self.ZIP64_EOCD_RECORD_SIZE = 56
+        self.ZIP64_EOCD_LOCATOR_SIZE = 20
+        self.MAX_STANDARD_ZIP_SIZE = 4_294_967_295
+        self.ZLIB_MAX_WBITS = 15
+
         self.client = s3_client
         self.bucket = bucket
         self.key = key
+        self.multipart_threshold = multipart_threshold
+        self.multipart_chunksize = multipart_chunksize
+
         self.zip_dir, self.cd_start = self.get_zip_dir()
 
     def parse_little_endian_to_int(self, little_endian_bytes):
@@ -80,7 +84,7 @@ class S3Zip:
         return body
 
     def threaded_s3_get(self, offset, file_size, chunk_size):
-        range_params = calculate_range_parameters(file_size, offset, chunk_size)
+        range_params = calculate_range_parameters(file_size, offset, self.multipart_chunksize)
 
         # Dispatch work tasks with our s3_client
         with ThreadPoolExecutor(max_workers=20) as executor:
@@ -89,18 +93,18 @@ class S3Zip:
         content = b''.join(results)
         return content
 
-    def get(self, start, length, threshold=MULTIPART_THRESHOLD, chunk_size=MULTIPART_CHUNKSIZE):
-        if length <= threshold:
+    def get(self, start, length):
+        if length <= self.multipart_threshold:
             end = start + length - 1
             content = self.ranged_s3_get(f'bytes={start}-{end}')
         else:
-            content = self.threaded_s3_get(start, length, chunk_size)
+            content = self.threaded_s3_get(start, length)
         return content
 
     def get_zip_dir(self):
         file_size = self.get_file_size()
-        eocd_record = self.get(file_size - EOCD_RECORD_SIZE, EOCD_RECORD_SIZE)
-        if file_size <= MAX_STANDARD_ZIP_SIZE:
+        eocd_record = self.get(file_size - self.EOCD_RECORD_SIZE, self.EOCD_RECORD_SIZE)
+        if file_size <= self.MAX_STANDARD_ZIP_SIZE:
             print('accessing zip')
             cd_start, cd_size = self.get_central_directory_metadata_from_eocd(eocd_record)
             central_directory = self.get(cd_start, cd_size)
@@ -108,12 +112,12 @@ class S3Zip:
         else:
             print('accessing zip64')
             zip64_eocd_record = self.get(
-                file_size - (EOCD_RECORD_SIZE + ZIP64_EOCD_LOCATOR_SIZE + ZIP64_EOCD_RECORD_SIZE),
-                ZIP64_EOCD_RECORD_SIZE,
+                file_size - (self.EOCD_RECORD_SIZE + self.ZIP64_EOCD_LOCATOR_SIZE + self.ZIP64_EOCD_RECORD_SIZE),
+                self.ZIP64_EOCD_RECORD_SIZE,
             )
             zip64_eocd_locator = self.get(
-                file_size - (EOCD_RECORD_SIZE + ZIP64_EOCD_LOCATOR_SIZE),
-                ZIP64_EOCD_LOCATOR_SIZE,
+                file_size - (self.EOCD_RECORD_SIZE + self.ZIP64_EOCD_LOCATOR_SIZE),
+                self.ZIP64_EOCD_LOCATOR_SIZE,
             )
             cd_start, cd_size = self.get_central_directory_metadata_from_eocd64(zip64_eocd_record)
             central_directory = self.get(cd_start, cd_size)
@@ -131,7 +135,7 @@ class S3Zip:
         content_offset = self.cd_start + zi.header_offset + 30 + name_len + extra_len
         content = self.get(content_offset, zi.compress_size)
         if zi.compress_type == zipfile.ZIP_DEFLATED:
-            content = isal_zlib.decompressobj(-15).decompress(content)
+            content = isal_zlib.decompressobj(-1 * self.ZLIB_MAX_WBITS).decompress(content)
 
         if outname:
             with open(outname, 'wb') as f:
