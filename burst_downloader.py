@@ -89,9 +89,9 @@ class S3Zip:
         cd_start = self.parse_little_endian_to_int(eocd64[48:56])
         return cd_start, cd_size
 
-    def print_zip_content(self):
+    def get_zip_content(self):
         files = [zi.filename for zi in self.zip_dir.filelist]
-        print(f"Files: {files}")
+        return files
 
     def _s3_get_file_size(self):
         file_size = self.client.head_object(Bucket=self.bucket, Key=self.key)['ContentLength']
