@@ -59,7 +59,7 @@ class BurstMetadata:
 
         # TODO maybe cleaner to write with ElementTree
         tmpl = f'''<VRTDataset rasterXSize="{outwidth}" rasterYSize="{outlength}">
-    <VRTRasterBand dataType="CFloat32" band="1">
+    <VRTRasterBand dataType="CInt16" band="1">
         <NoDataValue>0.0</NoDataValue>
         <SimpleSource>
             <SourceFilename relativeToVRT="1">{self.swath_name}</SourceFilename>
