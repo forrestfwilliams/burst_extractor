@@ -3,7 +3,7 @@ from pathlib import Path
 import boto3
 
 from burst_downloader import S3Zip
-from burst_translater import BurstMetadata
+from burst_translator import BurstMetadata
 
 if __name__ == '__main__':
 
