@@ -42,8 +42,8 @@ class S3Zip:
         client: Union[botocore.client.BaseClient, requests.sessions.Session],
         bucket: str,
         key: str,
-        multipart_threshold: int = 8 * MB,
-        multipart_chunksize: int = 8 * MB,
+        multipart_threshold: int = 25 * MB,
+        multipart_chunksize: int = 25 * MB,
     ):
         self.EOCD_RECORD_SIZE = 22
         self.ZIP64_EOCD_RECORD_SIZE = 56
