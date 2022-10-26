@@ -33,6 +33,7 @@ def calculate_range_parameters(total_size, offset, chunk_size):
             end_range = str(total_size + offset - 1)
         else:
             end_range = start_range + chunk_size - 1
+
         range_params.append(f'bytes={start_range}-{end_range}')
     return range_params
 
@@ -261,7 +262,6 @@ if __name__ == '__main__':
 
     annotation_out = 'annotation.xml'
     annotation_bytes = safe_zip.extract_file(annotation_path, outname=annotation_out)
-    breakpoint()
 
     swath_out = 'swath.tif'
     swath_bytes = safe_zip.extract_file(swath_path, outname=swath_out)
