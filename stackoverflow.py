@@ -44,5 +44,5 @@ bucket = ''
 key = ''
 
 content = threaded_s3_get(s3, bucket, key, 1 * MB, 101 * MB)
-with open('data.tif', 'wb') as f:
+with open('data.bin', 'wb') as f:
     f.write(content)
