@@ -40,8 +40,9 @@ class S3Zip:
     def __init__(
         self,
         client: Union[botocore.client.BaseClient, requests.sessions.Session],
-        bucket: str,
-        key: str,
+        # bucket: str,
+        # key: str,
+        url: str,
         multipart_threshold: int = 25 * MB,
         multipart_chunksize: int = 25 * MB,
     ):
@@ -52,16 +53,19 @@ class S3Zip:
         self.ZLIB_MAX_WBITS = 15
 
         self.client = client
-        self.bucket = bucket
-        self.key = key
+        # self.bucket = bucket
+        # self.key = key
+        # self.url = f'https://{self.bucket}.s3.us-west-2.amazonaws.com/{self.key}'
+        self.url = url
         self.multipart_threshold = multipart_threshold
         self.multipart_chunksize = multipart_chunksize
-        self.url = f'https://{self.bucket}.s3.us-west-2.amazonaws.com/{self.key}'
 
         if isinstance(self.client, botocore.client.BaseClient):
+            print('Using S3 methods')
             self.ranged_get = self._s3_ranged_get
             self.get_file_size = self._s3_get_file_size
         elif isinstance(self.client, requests.sessions.Session):
+            print('Using http methods')
             self.ranged_get = self._http_ranged_get
             self.get_file_size = self._http_get_file_size
         else:
@@ -98,7 +102,7 @@ class S3Zip:
         return file_size
 
     def _http_get_file_size(self):
-        file_size = int(self.client.head(self.url).headers['content-length'])
+        file_size = int(self.client.head(self.url, allow_redirects=True).headers['content-length'])
         return file_size
 
     def _s3_ranged_get(self, range_header):
@@ -176,12 +180,14 @@ class S3Zip:
 if __name__ == '__main__':
     bucket = 'ffwilliams2-shenanigans'
     key = 'bursts/S1A_IW_SLC__1SDV_20200604T022251_20200604T022318_032861_03CE65_7C85.zip'
+    url = "https://datapool.asf.alaska.edu/SLC/SA/S1A_IW_SLC__1SDV_20200604T022251_20200604T022318_032861_03CE65_7C85.zip"
     swath_path = 'S1A_IW_SLC__1SDV_20200604T022251_20200604T022318_032861_03CE65_7C85.SAFE/measurement/s1a-iw2-slc-vv-20200604t022253-20200604t022318-032861-03ce65-005.tiff'
     annotation_path = 'S1A_IW_SLC__1SDV_20200604T022251_20200604T022318_032861_03CE65_7C85.SAFE/annotation/s1a-iw2-slc-vv-20200604t022253-20200604t022318-032861-03ce65-005.xml'
 
-    client = boto3.client('s3')
-    # client = requests.session()
-    safe_zip = S3Zip(client, bucket, key)
+    # client = boto3.client('s3')
+    from asf_search import ASFSession
+    client = ASFSession()
+    safe_zip = S3Zip(client, url)
 
     annotation_out = 'annotation.xml'
     annotation_bytes = safe_zip.extract_file(annotation_path, outname=annotation_out)
