@@ -22,6 +22,7 @@ class BurstMetadata:
         self.burst = burst_xmls[self.burst_number]
         n_lines = int(self.annotation.findtext('.//{*}linesPerBurst'))
         n_samples = int(self.annotation.findtext('.//{*}samplesPerBurst'))
+        self.shape = (n_lines, n_samples)
 
         first_valid_samples = [int(val) for val in self.burst.find('firstValidSample').text.split()]
         last_valid_samples = [int(val) for val in self.burst.find('lastValidSample').text.split()]
@@ -33,11 +34,11 @@ class BurstMetadata:
         first_valid_sample = max(first_valid_samples[first_valid_line], first_valid_samples[last_line])
         last_sample = min(last_valid_samples[first_valid_line], last_valid_samples[last_line])
 
-        self.first_valid_line = first_valid_line
-        self.last_valid_line = last_line
+        self.first_valid_line = first_valid_line + (self.shape[0] * self.burst_number)
+        self.last_valid_line = last_line + (self.shape[0] * self.burst_number)
         self.first_valid_sample = first_valid_sample
         self.last_valid_sample = last_sample
-        self.shape = (n_lines, n_samples)
+        
         
     def get_bounds(self):
         return self.first_valid_sample, self.last_valid_sample, self.first_valid_line, self.last_valid_line
