@@ -38,6 +38,9 @@ class BurstMetadata:
         self.first_valid_sample = first_valid_sample
         self.last_valid_sample = last_sample
         self.shape = (n_lines, n_samples)
+        
+    def get_bounds(self):
+        return self.first_valid_sample, self.last_valid_sample, self.first_valid_line, self.last_valid_line
 
     def slc_to_vrt_file(self, out_path: str):
         '''Writes an ISCE-compatible burst to VRT a file.
