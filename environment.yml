@@ -1,0 +1,19 @@
+name: burst_extractor
+channels:
+  - conda-forge
+  - nodefaults
+dependencies:
+  - python
+  - pip
+  - boto3
+  - gdal
+  - aiobotocore
+  # jsn
+  - lxml
+  # me
+  - rasterio
+  - jupyter
+  - shapely
+  - matplotlib-base
+  - numpy
+  - ipympl
