@@ -22,39 +22,36 @@ frame_lines = int(tree.xpath('./swathTiming/linesPerBurst/text()')[0])
 # for each burst
 for index, burst in enumerate(tree.xpath('./swathTiming/burstList/burst')):
     # all offsets, even invalid offsets
-    offsets_azimuth = offsets(
+    offsets_range = offsets(
         np.array([int(val) for val in burst.xpath('firstValidSample/text()')[0].split()]),
         np.array([int(val) for val in burst.xpath('lastValidSample/text()')[0].split()]),
     )
 
     # returns the indices of lines containing valid data
-    lines_with_valid_data = np.flatnonzero(offsets_azimuth.end - offsets_azimuth.start)
+    lines_with_valid_data = np.flatnonzero(offsets_range.end - offsets_range.start)
 
     # get first and last sample with valid data per line
-    # x-axis
-    valid_offsets_azimuth = offsets(
-        np.amin(offsets_azimuth.start[lines_with_valid_data]),
-        np.amax(offsets_azimuth.end[lines_with_valid_data]),
+    # x-axis, range
+    valid_offsets_range = offsets(
+        offsets_range.start[lines_with_valid_data].min(),
+        offsets_range.end[lines_with_valid_data].max(),
     )
 
     # get the first and last line with valid data
-    # y-axis
-    valid_offsets_range = offsets(
-        np.amin(lines_with_valid_data),
-        np.amax(lines_with_valid_data),
+    # y-axis, azimuth
+    valid_offsets_azimuth = offsets(
+        lines_with_valid_data.min(),
+        lines_with_valid_data.max(),
     )
 
     # x-length
-    length_azimuth = valid_offsets_azimuth.end - valid_offsets_azimuth.start
+    length_range = valid_offsets_range.end - valid_offsets_range.start
     # y-length
-    length_range = len(lines_with_valid_data)
+    length_azimuth = len(lines_with_valid_data)
 
     # n-th burst * total lines + first azimuth
-    # x-offset
+    # y-offset
     azimuth_start = index * frame_lines + valid_offsets_azimuth.start
 
     # [x-offset, y-offset, x-length, y-length]
-    window = [azimuth_start, valid_offsets_range.start, length_azimuth, length_range]
-
-    burst_number = index + 1
-    gdal.Translate(f'burst{burst_number}.tiff', measurement, srcWin=window)
+    window = [valid_offsets_range.start, azimuth_start, length_range, length_azimuth]
