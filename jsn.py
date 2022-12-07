@@ -11,10 +11,10 @@ from osgeo import gdal
 offsets = namedtuple('offsets', 'start end')
 
 # annotation xml
-tree = etree.parse('s1a-iw1-slc-vh-20220302t135243-20220302t135308-042143-05057e-001.xml')
+tree = etree.parse('S1A_IW_SLC__1SDV_20200616T022252_20200616T022319_033036_03D3A3_5D11.SAFE/annotation/s1a-iw1-slc-vh-20200616t022253-20200616t022318-033036-03d3a3-001.xml')
 
 # load in the tiff itself with GDAL
-measurement = gdal.Open('s1a-iw1-slc-vh-20220302t135243-20220302t135308-042143-05057e-001.tiff')
+measurement = gdal.Open('S1A_IW_SLC__1SDV_20200616T022252_20200616T022319_033036_03D3A3_5D11.SAFE/measurement/s1a-iw1-slc-vh-20200616t022253-20200616t022318-033036-03d3a3-001.tiff')
 
 # number of lines in burst
 frame_lines = int(tree.xpath('./swathTiming/linesPerBurst/text()')[0])
@@ -55,3 +55,6 @@ for index, burst in enumerate(tree.xpath('./swathTiming/burstList/burst')):
 
     # [x-offset, y-offset, x-length, y-length]
     window = [valid_offsets_range.start, azimuth_start, length_range, length_azimuth]
+
+    burst_number = index + 1
+    gdal.Translate(f'burst{burst_number}.tiff', measurement, srcWin=window)
